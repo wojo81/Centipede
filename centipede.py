@@ -9,6 +9,11 @@ class TempEntity:
 
 class Entity:
 
+    @classmethod
+    def canUpdate(cls):
+        return game.frames % (11 - cls.SPEED ) == 0
+
+
     def __init__(this, x, y, **options):
         this.__x, this.__y= x, y
 
@@ -21,6 +26,10 @@ class Entity:
         if this.x == other.x and this.y == other.y:
             return True
         return False
+
+    @property
+    def id(this):
+        return this.__id
 
     @property
     def x(this):
@@ -41,15 +50,18 @@ class Entity:
         game.canvas.coords(this.__id, x, y, x + Game.ENTITY_LENGTH, y + Game.ENTITY_LENGTH)
 
     def update(this):
-        pass
+        if this.SPEED > 0 and this.canUpdate():
+            this._update()
 
     def die(this):
         game.canvas.delete(this.__id)
 
 class Rock(Entity):
 
+    SPEED= 0
+
     def __init__(this, x, y):
-        super().__init__(x, y, fill= "red")
+        super().__init__(x= x, y= y, fill= "red")
         this.__health= 4
 
     def fix(this):
@@ -57,21 +69,41 @@ class Rock(Entity):
 
     def collide(this):
         this.__health-= 1
-        if this.__health == 0:
+
+        if this.__health == 3:
+            game.canvas.itemconfig(this.id, fill= "#C00000")
+        elif this.__health == 2:
+            game.canvas.itemconfig(this.id, fill= "#800000")
+        elif this.__health == 1:
+            game.canvas.itemconfig(this.id, fill= "#400000")
+        else:
             this.die()
 
     def die(this):
         super().die()
         game.removeRock(this)
 
-class Centipede(Entity):
+class AggressiveEntity(Entity):
+
+    def update(this):
+        super().update()
+
+        if this == game.player:
+            game.player.die()
+
+    def collide(this):
+        this.die()
+
+class Centipede(AggressiveEntity):
+
+    SPEED= 5
 
     def __init__(this, x, y):
-        super().__init__(x, y, fill= "green")
+        super().__init__(x= x, y= y, fill= "green")
         this.__movingRight= True
         this.__movingDown= True
 
-    def update(this):
+    def _update(this):
 
         next= TempEntity(this.x, this.y)
         if this.__movingRight:
@@ -93,26 +125,86 @@ class Centipede(Entity):
 
         this.coords= next.x, next.y
 
-        if this == game.player:
-            game.player.die()
-
-    def collide(this):
-        this.die()
-
     def die(this):
         super().die()
         game.removeCentipede(this)
         game.addRock(Rock(this.x, this.y))
 
-class Bullet(Entity):
+class Spider(AggressiveEntity):
+    
+    SPEED= 5
 
     def __init__(this):
-        super().__init__(-1, -1, fill= "white")
-        this.__isDead= True
+        super().__init__(x= -1, y= -1, fill= "yellow")
 
-    def update(this):
+        this.__isDead= True
+        this.__moveRight= False
+        this.__direction= 0
+        this.__steps= 0
+
+    @property
+    def isDead(this):
+        return this.__isDead
+
+    def _update(this):
         
         if not this.__isDead:
+            
+            next= TempEntity(this.x, this.y)
+
+            if this.__direction <= 1:
+               next.y-= 1
+            else:
+                next.y+= 1
+
+            if this.__direction == 1 or this.__direction == 2:
+                if this.__moveRight == True:
+                    next.x+= 1
+                else:
+                    next.x-= 1
+
+            if next.x == -1 or next.x == Game.SIZE:
+                this.die()
+                return
+
+            if next in game.rocks:
+                game.rocks[game.rocks.index(next)].die()
+
+            this.coords= next.x, next.y
+
+            this.__steps-= 1
+            if this.__steps == 0:
+                this.__direction= random.randrange(4)
+                this.__steps= random.randrange(10) + 1
+
+    def resurrect(this):
+        this.__steps= random.randrange(16) + 1
+        this.__isDead= False
+        this.__moveRight= not this.__moveRight
+
+        if this.__moveRight:
+            this.coords= -1, game.SIZE - 10
+        else:
+            this.coords= game.SIZE, game.SIZE - 10
+
+        this.__direction= 2
+
+    def die(this):
+        this.__isDead= True
+        this.coords= - 1, -1
+
+class Bullet(Entity):
+
+    SPEED= 8
+
+    def __init__(this):
+        super().__init__(x= -1, y= -1, fill= "white")
+        
+        this.__isDead= True
+
+    def _update(this):
+        
+        if not this.isDead:
 
             next= TempEntity(this.x, this.y - 1)
 
@@ -139,8 +231,11 @@ class Bullet(Entity):
         this.coords= -1, -1
 
 class Player(Entity):
+
+    SPEED= 6
+
     def __init__(this, x, y):
-        super().__init__(x, y, fill= "blue")
+        super().__init__(x= x, y= y, fill= "blue")
 
         this.moveLeft= False
         this.moveRight= False
@@ -153,7 +248,7 @@ class Player(Entity):
     def isDead(this):
         return this.__isDead
 
-    def update(this):
+    def _update(this):
         
         if this.fireBullet and game.bullet.isDead:
             game.bullet.coords= this.x, this.y
@@ -180,7 +275,7 @@ class Player(Entity):
 
 class Game:
 
-    SIZE= 40
+    SIZE= 32
     SCREEN_HEIGHT= 800
     ENTITY_LENGTH= SCREEN_HEIGHT / SIZE
 
@@ -206,6 +301,8 @@ class Game:
 
         this.__setKeyBindings()
 
+        this.frames= 0
+
     def start(this):
         threading.Thread(target= this.__mainloop, daemon= True).start()
         this.__master.mainloop()
@@ -225,6 +322,10 @@ class Game:
     @property
     def enemies(this):
         return this.__enemies
+
+    @property
+    def spider(this):
+        return this.__spider
 
     @property
     def bullet(this):
@@ -253,30 +354,41 @@ class Game:
     def __mainloop(this):
         this.__player= Player(Game.SIZE / 2, Game.SIZE - 3)
         this.__bullet= Bullet()
+        this.__spider= Spider()
+        this.enemies.append(this.spider)
 
         for i in range(50):
-            rock= Rock(random.randrange(3, Game.SIZE), random.randrange(3, Game.SIZE - 3))
+            rock= Rock(random.randrange(0, Game.SIZE), random.randrange(3, Game.SIZE - 1))
             while rock in this.enemies or rock == this.__player:
-                rock.coords= random.randrange(3, Game.SIZE), random.randrange(3, Game.SIZE - 5)
+                rock.coords= random.randrange(0, Game.SIZE), random.randrange(3, Game.SIZE - 1)
             this.addRock(rock)
 
         for level in itertools.count():
-            numCentipedes= 7
+            numCentipedes= 10
             playing= True
+            this.spider.resurrect()
             while playing and not this.player.isDead:
-                if numCentipedes > 0:
+                if numCentipedes > 0 and Centipede.canUpdate():
                     this.addCentipede(Centipede(Game.SIZE / 2, 0))
                     numCentipedes-= 1
                 this.player.update()
                 this.bullet.update()
                 
+                if this.frames % 500 == 0 and this.spider.isDead:
+                    this.spider.resurrect()
+
                 for enemy in this.enemies:
                     enemy.update()
 
                 if not this.centipedes:
                     playing= False
 
-                time.sleep(0.05)
+                this.frames+= 1
+
+                if this.frames > 10000:
+                    this.frames= 0
+
+                time.sleep(0.0025)
 
             if this.player.isDead:
                 break
