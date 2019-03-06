@@ -58,7 +58,7 @@ class Entity:
 
 class Rock(Entity):
 
-    SPEED= 0
+    SPEED = 0
 
     def __init__(this, x, y):
         super().__init__(x= x, y= y, fill= "red")
@@ -193,9 +193,45 @@ class Spider(AggressiveEntity):
         this.__isDead= True
         this.coords= - 1, -1
 
+class RockThrower(AggressiveEntity):
+
+    SPEED= 5
+
+    def __init__(this):
+        super().__init__(-1, - 1, fill= "orange")
+        this.__isDead= True
+
+    @property
+    def isDead(this):
+        return this.__isDead
+
+    def _update(this):
+
+        if not this.__isDead:
+
+            this.coords= this.x, this.y + 1
+
+            if this.y == Game.SIZE:
+                this.die()
+                return
+
+            if not this in game.rocks:
+
+                if random.randrange(7) == 0:
+                    game.addRock(Rock(this.x, this.y))
+
+    def resurrect(this):
+        
+        this.coords= random.randrange(Game.SIZE), -1
+        this.__isDead= False
+
+    def die(this):
+        this.coords= - 1, -1
+        this.__isDead= True
+
 class Bullet(Entity):
 
-    SPEED= 8
+    SPEED= 9
 
     def __init__(this):
         super().__init__(x= -1, y= -1, fill= "white")
@@ -288,6 +324,7 @@ class Game:
 
         this.__player= None
         this.__spider= None
+        this.__rockThrower= None
         this.__bullet= None
         this.__enemies= []
         this.__rocks= []
@@ -328,6 +365,10 @@ class Game:
         return this.__spider
 
     @property
+    def rockThrower(this):
+        return this.__rockThrower
+
+    @property
     def bullet(this):
         return this.__bullet
 
@@ -355,7 +396,9 @@ class Game:
         this.__player= Player(Game.SIZE / 2, Game.SIZE - 3)
         this.__bullet= Bullet()
         this.__spider= Spider()
+        this.__rockThrower= RockThrower()
         this.enemies.append(this.spider)
+        this.enemies.append(this.rockThrower)
 
         for i in range(50):
             rock= Rock(random.randrange(0, Game.SIZE), random.randrange(3, Game.SIZE - 1))
@@ -363,7 +406,7 @@ class Game:
                 rock.coords= random.randrange(0, Game.SIZE), random.randrange(3, Game.SIZE - 1)
             this.addRock(rock)
 
-        for level in itertools.count():
+        for level in itertools.count(1):
             numCentipedes= 10
             playing= True
             this.spider.resurrect()
@@ -377,6 +420,9 @@ class Game:
                 if this.frames % 500 == 0 and this.spider.isDead:
                     this.spider.resurrect()
 
+                if level > 1 and this.frames % 1000 == 0 and this.rockThrower.isDead:
+                    this.rockThrower.resurrect()
+
                 for enemy in this.enemies:
                     enemy.update()
 
@@ -388,9 +434,10 @@ class Game:
                 if this.frames > 10000:
                     this.frames= 0
 
-                time.sleep(0.0025)
+                time.sleep(0.01)
 
             if this.player.isDead:
+                this.canvas.create_text(Game.SCREEN_HEIGHT / 2, Game.SCREEN_HEIGHT / 2, text= "Game Over! You made it past " + str(level - 1) + " levels!", fill= "white")
                 break
 
     def setMoveLeft(this, moveLeft):
